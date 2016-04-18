@@ -266,6 +266,164 @@ class TDHF(TDA):
         hx = numpy.hstack((vhf[:nz], -vhf[nz:]))
         return hx.reshape(nz,-1)
 
+    def ddiag2(self):
+        '''
+        [ A  B][X]
+        [-B -A][Y]
+        '''
+        mo_coeff = self._scf.mo_coeff
+        mo_energy = self._scf.mo_energy
+        nao, nmo = mo_coeff.shape
+        nocc = (self._scf.mo_occ>0).sum()
+        nvir = nmo - nocc
+        orbv = mo_coeff[:,nocc:]
+        orbo = mo_coeff[:,:nocc]
+        xys = numpy.eye(2*nvir*nocc)
+        nz = len(xys)
+        dms = numpy.empty((nz*2,nao,nao))
+        for i in range(nz):
+            x, y = xys[i].reshape(2,nvir,nocc)
+            dmx = reduce(numpy.dot, (orbv, x, orbo.T))
+            dmy = reduce(numpy.dot, (orbv, y, orbo.T))
+            dms[i   ] = dmx + dmy.T  # AX + BY
+            dms[i+nz] = dms[i].T # = dmy + dmx.T  # AY + BX
+        vj, vk = self._scf.get_jk(self.mol, dms, hermi=0)
+
+        if self.singlet:
+            vhf = vj*2 - vk
+        else:
+            vhf = -vk
+        #vhf = numpy.asarray([reduce(numpy.dot, (orbv.T, v, orbo)) for v in vhf])
+        vhf = _ao2mo.nr_e2_(vhf, mo_coeff, (nocc,nmo,0,nocc)).reshape(-1,nvir*nocc)
+        eai = pyscf.lib.direct_sum('a-i->ai', mo_energy[nocc:], mo_energy[:nocc])
+        eai = eai.ravel()
+        for i, z in enumerate(xys):
+            x, y = z.reshape(2,-1)
+            vhf[i   ] += eai * x  # AX
+            vhf[i+nz] += eai * y  # AY
+        hx = numpy.hstack((vhf[:nz], -vhf[nz:]))
+        amat = hx.reshape(nz,-1)
+        w, v = numpy.linalg.eigh(amat)
+        print w*27.21139
+
+    def ddiag(self):
+        mo_coeff = self._scf.mo_coeff
+        mo_energy = self._scf.mo_energy
+        nao, nmo = mo_coeff.shape
+        nocc = (self._scf.mo_occ>0).sum()
+        nvir = nmo - nocc
+        orbv = mo_coeff[:,nocc:]
+        orbo = mo_coeff[:,:nocc]
+        xys = numpy.eye(2*nvir*nocc)
+        nz = len(xys)
+        dms = numpy.empty((nz*2,nao,nao))
+        for i in range(nz):
+            x, y = xys[i].reshape(2,nvir,nocc)
+            dmx = reduce(numpy.dot, (orbv, x, orbo.T))
+            dmy = reduce(numpy.dot, (orbv, y, orbo.T))
+            dms[i   ] = dmx + dmy.T  # AX + BY
+            dms[i+nz] = dms[i].T # = dmy + dmx.T  # AY + BX
+        vj, vk = self._scf.get_jk(self.mol, dms, hermi=0)
+
+        if self.singlet:
+            vhf = vj*2 - vk
+        else:
+            vhf = -vk
+        #vhf = numpy.asarray([reduce(numpy.dot, (orbv.T, v, orbo)) for v in vhf])
+        vhf = _ao2mo.nr_e2_(vhf, mo_coeff, (nocc,nmo,0,nocc)).reshape(-1,nvir*nocc)
+#        eai = pyscf.lib.direct_sum('a-i->ai', mo_energy[nocc:], mo_energy[:nocc])
+#        eai = eai.ravel()
+#        for i, z in enumerate(xys):
+#            x, y = z.reshape(2,-1)
+#            vhf[i   ] += eai * x  # AX
+#            vhf[i+nz] += eai * y  # AY
+
+        fv = reduce(numpy.dot, (orbv.T, self._scf.sfock, orbv))
+        fo = reduce(numpy.dot, (orbo.T, self._scf.sfock, orbo))
+        sv = reduce(numpy.dot, (orbv.T, self._scf.ss1e, orbv))
+        so = reduce(numpy.dot, (orbo.T, self._scf.ss1e, orbo))
+        ss = numpy.empty_like(vhf)
+        for i, z in enumerate(xys):
+            x, y = z.reshape(2,-1)
+            xm = x.reshape(nvir,nocc)
+            ym = y.reshape(nvir,nocc)
+            px1 = numpy.einsum('ij,kl,jl->ik',fv,so,xm)
+            px2 = numpy.einsum('ij,kl,jl->ik',sv,fo,xm)
+            pxs = numpy.einsum('ij,kl,jl->ik',sv,so,xm)
+            py1 = numpy.einsum('ij,kl,jl->ik',fv,so,ym)
+            py2 = numpy.einsum('ij,kl,jl->ik',sv,fo,ym)
+            pys = numpy.einsum('ij,kl,jl->ik',sv,so,ym)
+            vhf[i   ] += (px1-px2).ravel()
+            vhf[i+nz] += (py1-py2).ravel()
+            ss[i   ] = pxs.ravel()
+            ss[i+nz] = pys.ravel()
+
+        hx = numpy.hstack((vhf[:nz], -vhf[nz:]))
+        sx = numpy.hstack((ss[:nz], ss[nz:]))
+        
+        w, v = scipy.linalg.eigh(hx,sx)
+        print w*27.21139
+
+    def abop(self, xys):
+        '''
+        [ A B][X]   [ S  0 ] [X]
+        [ B A][Y] + [ 0 -S ] [Y]
+        '''
+        mo_coeff = self._scf.mo_coeff
+        mo_energy = self._scf.mo_energy
+        nao, nmo = mo_coeff.shape
+        nocc = (self._scf.mo_occ>0).sum()
+        nvir = nmo - nocc
+        orbv = mo_coeff[:,nocc:]
+        orbo = mo_coeff[:,:nocc]
+        nz = len(xys)
+        dms = numpy.empty((nz*2,nao,nao))
+        for i in range(nz):
+            x, y = xys[i].reshape(2,nvir,nocc)
+            dmx = reduce(numpy.dot, (orbv, x, orbo.T))
+            dmy = reduce(numpy.dot, (orbv, y, orbo.T))
+            dms[i   ] = dmx + dmy.T  # AX + BY
+            dms[i+nz] = dms[i].T # = dmy + dmx.T  # AY + BX
+        vj, vk = self._scf.get_jk(self.mol, dms, hermi=0)
+
+        if self.singlet:
+            vhf = vj*2 - vk
+        else:
+            vhf = -vk
+        #vhf = numpy.asarray([reduce(numpy.dot, (orbv.T, v, orbo)) for v in vhf])
+        vhf = _ao2mo.nr_e2_(vhf, mo_coeff, (nocc,nmo,0,nocc)).reshape(-1,nvir*nocc)
+#        eai = pyscf.lib.direct_sum('a-i->ai', mo_energy[nocc:], mo_energy[:nocc])
+#        eai = eai.ravel()
+#        for i, z in enumerate(xys):
+#            x, y = z.reshape(2,-1)
+#            vhf[i   ] += eai * x  # AX
+#            vhf[i+nz] += eai * y  # AY
+
+        fv = reduce(numpy.dot, (orbv.T, self._scf.sfock, orbv))
+        fo = reduce(numpy.dot, (orbo.T, self._scf.sfock, orbo))
+        sv = reduce(numpy.dot, (orbv.T, self._scf.ss1e, orbv))
+        so = reduce(numpy.dot, (orbo.T, self._scf.ss1e, orbo))
+        ss = numpy.empty_like(vhf)
+        for i, z in enumerate(xys):
+            x, y = z.reshape(2,-1)
+            xm = x.reshape(nvir,nocc)
+            ym = y.reshape(nvir,nocc)
+            px1 = numpy.einsum('ij,kl,jl->ik',fv,so,xm)
+            px2 = numpy.einsum('ij,kl,jl->ik',sv,fo,xm)
+            pxs = numpy.einsum('ij,kl,jl->ik',sv,so,xm)
+            py1 = numpy.einsum('ij,kl,jl->ik',fv,so,ym)
+            py2 = numpy.einsum('ij,kl,jl->ik',sv,fo,ym)
+            pys = numpy.einsum('ij,kl,jl->ik',sv,so,ym)
+            vhf[i   ] += (px1-px2).ravel()
+            vhf[i+nz] += (py1-py2).ravel()
+            ss[i   ] = pxs.ravel()
+            ss[i+nz] = pys.ravel()
+
+        hx = numpy.hstack((vhf[:nz], -vhf[nz:]))
+        sx = numpy.hstack((ss[:nz], ss[nz:]))
+
+        return hx.reshape(nz,-1), sx.reshape(nz,-1)
+
     def get_precond(self, hdiag):
         def precond(x, e, x0):
             diagd = hdiag - (e-self.level_shift)
@@ -304,7 +462,14 @@ class TDHF(TDA):
             realidx = numpy.where((w.imag == 0) & (w.real > 0))[0]
             return realidx[w[realidx].real.argsort()[:nroots]]
 
-        w, x1 = davidson.eig(self.get_vind, x0, precond,
+        if nolmo :
+            w, x1 = davidson.dgeev(self.abop, x0, precond,
+                             tol=self.conv_tol, type=1,
+                             nroots=self.nstates, lindep=self.lindep,
+                             max_space=self.max_space,
+                             verbose=self.verbose)
+        else:
+            w, x1 = davidson.eig(self.get_vind, x0, precond,
                              tol=self.conv_tol,
                              nroots=self.nstates, lindep=self.lindep,
                              max_space=self.max_space, pick=pickeig,
