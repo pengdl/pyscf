@@ -89,8 +89,48 @@ class TDA(pyscf.lib.StreamObject):
             v1vo[i] += eai * z
         return v1vo.reshape(nz,-1)
 
+    def abop(self, zs):
+        '''Compute Ax and Bx'''
+        mo_coeff = self._scf.mo_coeff
+        mo_energy = self._scf.mo_energy
+        nao, nmo = mo_coeff.shape
+        nocc = (self._scf.mo_occ>0).sum()
+        nvir = nmo - nocc
+        orbv = mo_coeff[:,nocc:]
+        orbo = mo_coeff[:,:nocc]
+        nz = len(zs)
+        dmvo = numpy.empty((nz,nao,nao))
+        for i, z in enumerate(zs):
+            dmvo[i] = reduce(numpy.dot, (orbv, z.reshape(nvir,nocc), orbo.T))
+        vj, vk = self._scf.get_jk(self.mol, dmvo, hermi=0)
+
+        if self.singlet:
+            vhf = vj*2 - vk
+        else:
+            vhf = -vk
+
+        #v1vo = numpy.asarray([reduce(numpy.dot, (orbv.T, v, orbo)) for v in vhf])
+        v1vo = _ao2mo.nr_e2_(vhf, mo_coeff, (nocc,nmo,0,nocc)).reshape(-1,nvir*nocc)
+#        eai = pyscf.lib.direct_sum('a-i->ai', mo_energy[nocc:], mo_energy[:nocc])
+#        eai = eai.ravel()
+#        for i, z in enumerate(zs):
+#            v1vo[i] += eai * z
+        fv = reduce(numpy.dot, (orbv.T, self._scf.sfock, orbv))
+        fo = reduce(numpy.dot, (orbo.T, self._scf.sfock, orbo))
+        sv = reduce(numpy.dot, (orbv.T, self._scf.ss1e, orbv))
+        so = reduce(numpy.dot, (orbo.T, self._scf.ss1e, orbo))
+        ss = numpy.empty_like(zs)
+        for i, z in enumerate(zs):
+            zm = z.reshape(nvir,nocc)
+            p1 = numpy.einsum('ij,kl,jl->ik',fv,so,zm)
+            p2 = numpy.einsum('ij,kl,jl->ik',sv,fo,zm)
+            ps = numpy.einsum('ij,kl,jl->ik',sv,so,zm)
+            v1vo[i] += (p1-p2).ravel()
+            ss[i] = ps.ravel()
+        return v1vo.reshape(nz,-1), ss.reshape(nz,-1)
+
     def ddiag(self):
-        '''Compute A'''
+        '''diag Ax = eSx'''
         mo_coeff = self._scf.mo_coeff
         mo_energy = self._scf.mo_energy
         nao, nmo = mo_coeff.shape
@@ -158,7 +198,7 @@ class TDA(pyscf.lib.StreamObject):
             x0[i,idx[i]] = 1  # lowest excitations
         return x0
 
-    def kernel(self, x0=None):
+    def kernel(self, x0=None, nolmo=False):
         '''TDA diagonalization solver
         '''
         self.check_sanity()
@@ -172,7 +212,12 @@ class TDA(pyscf.lib.StreamObject):
 
         precond = self.get_precond(eai.ravel())
 
-        self.e, x1 = pyscf.lib.davidson1(self.get_vind, x0, precond,
+        if nolmo :
+            self.e, x1 = davidson.dgeev(self.abop, x0, precond, tol=self.conv_tol,
+                                    type=1, max_cycle=100, max_space=self.max_space,
+                                    lindep=self.lindep, verbose=self.verbose, nroots=self.nstates)
+        else:
+            self.e, x1 = pyscf.lib.davidson1(self.get_vind, x0, precond,
                                          tol=self.conv_tol,
                                          nroots=self.nstates, lindep=self.lindep,
                                          max_space=self.max_space,
@@ -239,7 +284,7 @@ class TDHF(TDA):
             x0[i,idx[i]] = 1  # lowest excitations
         return x0
 
-    def kernel(self, x0=None):
+    def kernel(self, x0=None, nolmo=False):
         '''TDHF diagonalization with non-Hermitian eigenvalue solver
         '''
         self.check_sanity()
