@@ -80,9 +80,9 @@ def runscf(mf, conv_tol=1e-10, conv_tol_grad=None,
             dec = -grd1
             gold = grd1
         else:
-            a1 = numpy.sum( grd1*(grd1-gold) )
-            a2 = numpy.sum( grd1*grd1 )
-            b1 = numpy.sum( dold*(grd1-gold) )
+            a1 = numpy.sum(grd1*(grd1-gold))
+            a2 = numpy.sum(grd1*grd1)
+            b1 = numpy.sum(dold*(grd1-gold))
             bhs = a1/b1
             bdy = a2/b1
             beta = max(min(bhs,bdy),0.)
@@ -95,18 +95,18 @@ def runscf(mf, conv_tol=1e-10, conv_tol_grad=None,
         #print 'dec:',mt(dec)
         mocc += step * dec
         #print "mocc",mt(mocc)
-        mocc = renorm( s1e, mocc)
-        hmat = reduce( numpy.dot, (mocc.T, fmat, mocc) )
-        smat = reduce( numpy.dot, (mocc.T, s1e, mocc) )
+        mocc = renorm(s1e, mocc)
+        hmat = reduce(numpy.dot, (mocc.T, fmat, mocc) )
+        smat = reduce(numpy.dot, (mocc.T, s1e, mocc) )
         #print 'SMAT:',mt(smat)
         xmat = update_xmat(-eta*smat, smat, xmat, nocc, eta)
 
         dm = make_rdmx(mocc, xmat, smat)
         vhf = mf.get_veff(mol, dm )
         e_tot = mf.energy_tot(dm, h1e, vhf)
-        ns = numpy.sum( dm * s1e )
+        ns = numpy.sum(dm * s1e)
         #print '(nele-ns):',(nele-ns)
-        e_tot += eta * ( nele - ns )
+        e_tot += eta * (nele - ns)
 
         norm_gorb = numpy.sum(grd1**2)
         norm_ddm = numpy.linalg.norm(dm-dm_last)
@@ -123,9 +123,12 @@ def runscf(mf, conv_tol=1e-10, conv_tol_grad=None,
     #print 'SMAT:',mt(smat)
     
     movv = get_vir(mocc, s1e)
+    movv = renorm(s1e, movv)
     #print 'Cocc:',mt(mocc)
     #print 'Cvir:',mt(movv)
-    #fock = h1e + vhf
+    fock = h1e + vhf
+    mf.sfock = fock
+    mf.ss1e = s1e
     #a1 = reduce(numpy.dot, (mocc.T, s1e, movv))
     #a2 = reduce(numpy.dot, (movv.T, s1e, mocc))
     #print 'Test1:',mt(a1)

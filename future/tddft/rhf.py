@@ -12,7 +12,7 @@ import numpy
 import pyscf.lib
 from pyscf.tddft import davidson
 from pyscf.ao2mo import _ao2mo
-
+from pyscf.scf.nolmo import mt
 
 class TDA(pyscf.lib.StreamObject):
     def __init__(self, mf):
@@ -87,6 +87,50 @@ class TDA(pyscf.lib.StreamObject):
         for i, z in enumerate(zs):
             v1vo[i] += eai * z
         return v1vo.reshape(nz,-1)
+
+    def ddiag(self):
+        '''Compute A'''
+        mo_coeff = self._scf.mo_coeff
+        mo_energy = self._scf.mo_energy
+        nao, nmo = mo_coeff.shape
+        nocc = (self._scf.mo_occ>0).sum()
+        nvir = nmo - nocc
+        orbv = mo_coeff[:,nocc:]
+        orbo = mo_coeff[:,:nocc]
+        zs = numpy.eye(nocc*nvir)
+        nz = len(zs)
+        dmvo = numpy.empty((nz,nao,nao))
+        for i, z in enumerate(zs):
+            dmvo[i] = reduce(numpy.dot, (orbv, z.reshape(nvir,nocc), orbo.T))
+        vj, vk = self._scf.get_jk(self.mol, dmvo, hermi=0)
+
+        if self.singlet:
+            vhf = vj*2 - vk
+        else:
+            vhf = -vk
+
+        #v1vo = numpy.asarray([reduce(numpy.dot, (orbv.T, v, orbo)) for v in vhf])
+        v1vo = _ao2mo.nr_e2_(vhf, mo_coeff, (nocc,nmo,0,nocc)).reshape(-1,nvir*nocc)
+#        eai = pyscf.lib.direct_sum('a-i->ai', mo_energy[nocc:], mo_energy[:nocc])
+#        eai = eai.ravel()
+#        for i, z in enumerate(zs):
+#            v1vo[i] += eai * z
+        amat = v1vo.reshape(nz,-1)
+        print 'Amat:',mt(amat)
+        #print 'Fock:',mt(self._scf.sfock)
+        #print 'S1e:',mt(self._scf.ss1e)
+        fv = reduce(numpy.dot, (orbv.T, self._scf.sfock, orbv))
+        fo = reduce(numpy.dot, (orbo.T, self._scf.sfock, orbo))
+        print 'fv:',mt(fv)
+        print 'fo:',mt(fo)
+        sv = reduce(numpy.dot, (orbv.T, self._scf.ss1e, orbv))
+        so = reduce(numpy.dot, (orbo.T, self._scf.ss1e, orbo))
+        print 'sv:',mt(sv)
+        print 'so:',mt(so)
+
+
+        w, v = numpy.linalg.eigh(amat)
+        print w*27.21139
 
     def get_precond(self, hdiag):
         def precond(x, e, x0):

@@ -159,6 +159,8 @@ Keyword argument "init_dm" is replaced by "dm0"''')
     mo_energy, mo_coeff = mf.eig(fock, s1e)
     mo_occ = mf.get_occ(mo_energy, mo_coeff)
     logger.timer(mf, 'scf_cycle', *cput0)
+    mf.sfock = fock
+    mf.ss1e = s1e
     return scf_conv, e_tot, mo_energy, mo_coeff, mo_occ
 
 
