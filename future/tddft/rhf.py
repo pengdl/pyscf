@@ -9,6 +9,7 @@
 
 from functools import reduce
 import numpy
+import scipy
 import pyscf.lib
 from pyscf.tddft import davidson
 from pyscf.ao2mo import _ao2mo
@@ -111,25 +112,33 @@ class TDA(pyscf.lib.StreamObject):
 
         #v1vo = numpy.asarray([reduce(numpy.dot, (orbv.T, v, orbo)) for v in vhf])
         v1vo = _ao2mo.nr_e2_(vhf, mo_coeff, (nocc,nmo,0,nocc)).reshape(-1,nvir*nocc)
+#        v1vo = numpy.zeros_like(v1vo)
 #        eai = pyscf.lib.direct_sum('a-i->ai', mo_energy[nocc:], mo_energy[:nocc])
 #        eai = eai.ravel()
 #        for i, z in enumerate(zs):
 #            v1vo[i] += eai * z
         amat = v1vo.reshape(nz,-1)
-        print 'Amat:',mt(amat)
+#        print 'diag',mt(amat)
         #print 'Fock:',mt(self._scf.sfock)
         #print 'S1e:',mt(self._scf.ss1e)
         fv = reduce(numpy.dot, (orbv.T, self._scf.sfock, orbv))
         fo = reduce(numpy.dot, (orbo.T, self._scf.sfock, orbo))
-        print 'fv:',mt(fv)
-        print 'fo:',mt(fo)
+        #print 'fv:',mt(fv)
+        #print 'fo:',mt(fo)
         sv = reduce(numpy.dot, (orbv.T, self._scf.ss1e, orbv))
         so = reduce(numpy.dot, (orbo.T, self._scf.ss1e, orbo))
-        print 'sv:',mt(sv)
-        print 'so:',mt(so)
+        #print 'sv:',mt(sv)
+        #print 'so:',mt(so)
+        fvi = numpy.einsum('ij,kl->ikjl',fv,so).reshape((nvir*nocc,-1))
+        fio = numpy.einsum('ij,kl->ikjl',sv,fo).reshape((nvir*nocc,-1))
+        ff = fvi - fio
+        #print 'ff',mt(ff)
+        amat += ff
+        #print 'Amat:',mt(amat)
+        ss = numpy.einsum('ij,kl->ikjl',sv,so).reshape((nvir*nocc,-1))
+        #print 'Smat:',mt(ss)
 
-
-        w, v = numpy.linalg.eigh(amat)
+        w, v = scipy.linalg.eigh(amat,ss)
         print w*27.21139
 
     def get_precond(self, hdiag):
