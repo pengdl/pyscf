@@ -47,11 +47,16 @@ scf.conv_tol = 1.e-1
 scf.kernel()
 scf.conv_tol = 1.e-12
 scf.nolmo()
-td = tddft.TDA(scf)
-print (td.kernel()[0] * 27.21139 )
+td = tddft.TDDFT(scf)
+td.singlet=False
+td.nstates = 10
+print (td.kernel(nolmo=True)[0] * 27.21139 )
 td.ddiag()
+
 scf.kernel()
-td = tddft.TDA(scf)
+td = tddft.TDDFT(scf)
+td.singlet=False
+td.nstates = 10
 print (td.kernel()[0] * 27.21139 )
-td.ddiag()
+td.ddiag2()
 
