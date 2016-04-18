@@ -20,7 +20,7 @@ from pyscf.scf import _vhf
 import pyscf.scf.chkfile
 
 
-def scf(mf, conv_tol=1e-10, conv_tol_grad=None,
+def runscf(mf, conv_tol=1e-10, conv_tol_grad=None,
            dump_chk=True, dm0=None, callback=None, **kwargs):
     '''nolmo: the NOLMO-SCF driver.
     '''
@@ -122,12 +122,22 @@ def scf(mf, conv_tol=1e-10, conv_tol_grad=None,
     logger.timer(mf, 'scf_cycle', *cput0)
     #print 'SMAT:',mt(smat)
     
-    if scf_conv :
-        logger.note(mf, 'converged SCF energy = %.15g', e_tot)
-    else:
-        logger.note(mf, 'SCF not converge.')
-        logger.note(mf, 'SCF energy = %.15g after %d cycles', e_tot, 99)
+    movv = get_vir(mocc, s1e)
+    #print 'Cocc:',mt(mocc)
+    #print 'Cvir:',mt(movv)
+    #fock = h1e + vhf
+    #a1 = reduce(numpy.dot, (mocc.T, s1e, movv))
+    #a2 = reduce(numpy.dot, (movv.T, s1e, mocc))
+    #print 'Test1:',mt(a1)
+    #print 'Test2:',mt(a2)
+    mo_coeff = numpy.column_stack((mocc, movv))
+    #print 'MO_coeff',mt(mo_coeff)
+
     return scf_conv, e_tot, mo_energy, mo_coeff, mo_occ
+
+def get_vir(c,s):
+    u, w, vt = scipy.linalg.svd(s.dot(c))
+    return u[:,c.shape[1]:]
 
 def renorm(s,c):
     #from math import sqrt

@@ -19,6 +19,7 @@ import pyscf.gto.ecp
 from pyscf.lib import logger
 from pyscf.scf import diis
 from pyscf.scf import _vhf
+from pyscf.scf import nolmo
 import pyscf.scf.chkfile
 
 
@@ -1134,6 +1135,18 @@ class SCF(pyscf.lib.StreamObject):
     def kernel(self, dm0=None):
         return self.scf(dm0)
     kernel.__doc__ = scf.__doc__
+
+    def nolmo(self,dm0=None):
+        cput0 = (time.clock(), time.time())
+        self.build_(self.mol)
+        self.dump_flags()
+        self.converged, self.e_tot, \
+                self.mo_energy, self.mo_coeff, self.mo_occ = \
+                nolmo.runscf(self, self.conv_tol, self.conv_tol_grad,
+                       dm0=dm0, callback=self.callback)
+        logger.timer(self, 'NOLMO_SCF', *cput0)
+        self._finalize_()
+        return self.e_tot
 
     def _finalize_(self):
         if self.converged:
