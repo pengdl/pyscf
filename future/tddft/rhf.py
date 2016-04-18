@@ -303,7 +303,7 @@ class TDHF(TDA):
             vhf[i+nz] += eai * y  # AY
         hx = numpy.hstack((vhf[:nz], -vhf[nz:]))
         amat = hx.reshape(nz,-1)
-        w, v = numpy.linalg.eigh(amat)
+        w, v = numpy.linalg.eig(amat)
         print w*27.21139
 
     def ddiag(self):
@@ -361,7 +361,7 @@ class TDHF(TDA):
         hx = numpy.hstack((vhf[:nz], -vhf[nz:]))
         sx = numpy.hstack((ss[:nz], ss[nz:]))
         
-        w, v = scipy.linalg.eigh(hx,sx)
+        w, v = scipy.linalg.eig(hx,sx)
         print w*27.21139
 
     def abop(self, xys):
