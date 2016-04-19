@@ -17,6 +17,7 @@ from pyscf.dft import numint
 from pyscf import dft
 from pyscf.tddft import rhf
 from pyscf.ao2mo import _ao2mo
+from pyscf.future.tddft import davidson
 
 #
 # Libxc may have bug or numerical instability for high order derivatives.
@@ -163,6 +164,59 @@ class TDA(rhf.TDA):
             v1vo[i] += eai * z
         return v1vo.reshape(nz,-1)
 
+    def abop(self, zs):
+        '''Compute Ax and Bx'''
+        mol = self.mol
+        mo_coeff = self._scf.mo_coeff
+        mo_energy = self._scf.mo_energy
+        nao, nmo = mo_coeff.shape
+        nocc = (self._scf.mo_occ>0).sum()
+        nvir = nmo - nocc
+        orbv = mo_coeff[:,nocc:]
+        orbo = mo_coeff[:,:nocc]
+        nz = len(zs)
+        dmvo = numpy.empty((nz,nao,nao))
+        for i, z in enumerate(zs):
+            dmvo[i] = reduce(numpy.dot, (orbv, z.reshape(nvir,nocc), orbo.T))
+
+        mem_now = pyscf.lib.current_memory()[0]
+        max_memory = max(2000, self.max_memory*.9-mem_now)
+        v1ao = _contract_xc_kernel(self, self._scf.xc, dmvo,
+                                   singlet=self.singlet, max_memory=max_memory)
+
+        hyb = self._scf._numint.hybrid_coeff(self._scf.xc, spin=(mol.spin>0)+1)
+        if abs(hyb) > 1e-10:
+            vj, vk = self._scf.get_jk(self.mol, dmvo, hermi=0)
+            if self.singlet:
+                v1ao += vj * 2 - hyb * vk
+            else:
+                v1ao += -hyb * vk
+        else:
+            if self.singlet:
+                vj = self._scf.get_j(self.mol, dmvo, hermi=1)
+                v1ao += vj * 2
+
+        v1vo = _ao2mo.nr_e2_(v1ao, mo_coeff, (nocc,nmo,0,nocc)).reshape(-1,nvir*nocc)
+#        eai = pyscf.lib.direct_sum('a-i->ai', mo_energy[nocc:], mo_energy[:nocc])
+#        eai = eai.ravel()
+#        for i, z in enumerate(zs):
+#            v1vo[i] += eai * z
+
+        fv = reduce(numpy.dot, (orbv.T, self._scf.sfock, orbv))
+        fo = reduce(numpy.dot, (orbo.T, self._scf.sfock, orbo))
+        sv = reduce(numpy.dot, (orbv.T, self._scf.ss1e, orbv))
+        so = reduce(numpy.dot, (orbo.T, self._scf.ss1e, orbo))
+        ss = numpy.empty_like(zs)
+        for i, z in enumerate(zs):
+            zm = z.reshape(nvir,nocc)
+            p1 = numpy.einsum('ij,kl,jl->ik',fv,so,zm)
+            p2 = numpy.einsum('ij,kl,jl->ik',sv,fo,zm)
+            ps = numpy.einsum('ij,kl,jl->ik',sv,so,zm)
+            v1vo[i] += (p1-p2).ravel()
+            ss[i] = ps.ravel()
+
+        return v1vo.reshape(nz,-1), ss.reshape(nz,-1)
+
 
 class TDDFT(rhf.TDHF):
     def get_vind(self, xys):
@@ -219,6 +273,83 @@ class TDDFT(rhf.TDHF):
         hx = numpy.hstack((veff[:nz], -veff[nz:]))
         return hx.reshape(nz,-1)
 
+    def abop(self, xys):
+        '''
+        [ A  B][X]
+        [-B -A][Y] + S
+        '''
+        mol = self.mol
+        mo_coeff = self._scf.mo_coeff
+        mo_energy = self._scf.mo_energy
+        nao, nmo = mo_coeff.shape
+        nocc = (self._scf.mo_occ>0).sum()
+        nvir = nmo - nocc
+        orbv = mo_coeff[:,nocc:]
+        orbo = mo_coeff[:,:nocc]
+        nz = len(xys)
+        dms = numpy.empty((nz*2,nao,nao))
+        for i in range(nz):
+            x, y = xys[i].reshape(2,nvir,nocc)
+            dmx = reduce(numpy.dot, (orbv, x, orbo.T))
+            dmy = reduce(numpy.dot, (orbv, y, orbo.T))
+            dms[i   ] = dmx + dmy.T  # AX + BY
+            dms[i+nz] = dms[i].T # = dmy + dmx.T  # AY + BX
+
+        hyb = self._scf._numint.hybrid_coeff(self._scf.xc, spin=(mol.spin>0)+1)
+
+        if abs(hyb) > 1e-10:
+            vj, vk = self._scf.get_jk(self.mol, dms, hermi=0)
+            if self.singlet:
+                veff = vj * 2 - hyb * vk
+            else:
+                veff = -hyb * vk
+        else:
+            if self.singlet:
+                vj = self._scf.get_j(self.mol, dms, hermi=1)
+                veff = vj * 2
+            else:
+                veff = numpy.zeros((nz*2,nao,nao))
+
+        mem_now = pyscf.lib.current_memory()[0]
+        max_memory = max(2000, self.max_memory*.9-mem_now)
+        v1xc = _contract_xc_kernel(self, self._scf.xc, dms[:nz],
+                                   singlet=self.singlet, max_memory=max_memory)
+        veff[:nz] += v1xc
+        veff[nz:] += v1xc
+
+        veff = _ao2mo.nr_e2_(veff, mo_coeff, (nocc,nmo,0,nocc)).reshape(-1,nvir*nocc)
+        #eai = pyscf.lib.direct_sum('a-i->ai', mo_energy[nocc:], mo_energy[:nocc])
+        #eai = eai.ravel()
+        #for i, z in enumerate(xys):
+            #x, y = z.reshape(2,-1)
+            #veff[i   ] += eai * x  # AX
+            #veff[i+nz] += eai * y  # AY
+
+        fv = reduce(numpy.dot, (orbv.T, self._scf.sfock, orbv))
+        fo = reduce(numpy.dot, (orbo.T, self._scf.sfock, orbo))
+        sv = reduce(numpy.dot, (orbv.T, self._scf.ss1e, orbv))
+        so = reduce(numpy.dot, (orbo.T, self._scf.ss1e, orbo))
+        ss = numpy.empty_like(veff)
+        for i, z in enumerate(xys):
+            x, y = z.reshape(2,-1)
+            xm = x.reshape(nvir,nocc)
+            ym = y.reshape(nvir,nocc)
+            px1 = numpy.einsum('ij,kl,jl->ik',fv,so,xm)
+            px2 = numpy.einsum('ij,kl,jl->ik',sv,fo,xm)
+            pxs = numpy.einsum('ij,kl,jl->ik',sv,so,xm)
+            py1 = numpy.einsum('ij,kl,jl->ik',fv,so,ym)
+            py2 = numpy.einsum('ij,kl,jl->ik',sv,fo,ym)
+            pys = numpy.einsum('ij,kl,jl->ik',sv,so,ym)
+            veff[i   ] += (px1-px2).ravel()
+            veff[i+nz] += (py1-py2).ravel()
+            ss[i   ] = pxs.ravel()
+            ss[i+nz] = pys.ravel()
+
+        hx = numpy.hstack((veff[:nz], -veff[nz:]))
+        sx = numpy.hstack((ss[:nz], ss[nz:]))
+
+        return hx.reshape(nz,-1), sx.reshape(nz,-1)
+
 
 class TDDFTNoHybrid(TDA):
     ''' Solve (A-B)(A+B)(X+Y) = (X+Y)w^2
@@ -258,7 +389,57 @@ class TDDFTNoHybrid(TDA):
             v1vo[i] *= dai
         return v1vo.reshape(nz,-1)
 
-    def kernel(self, x0=None):
+    def abop(self, zs):
+        mol = self.mol
+        mo_coeff = self._scf.mo_coeff
+        mo_energy = self._scf.mo_energy
+        nao, nmo = mo_coeff.shape
+        nocc = (self._scf.mo_occ>0).sum()
+        nvir = nmo - nocc
+        orbv = mo_coeff[:,nocc:]
+        orbo = mo_coeff[:,:nocc]
+        eai = pyscf.lib.direct_sum('a-i->ai', mo_energy[nocc:], mo_energy[:nocc])
+        dai = numpy.sqrt(eai).ravel()
+
+        nz = len(zs)
+        dmvo = numpy.empty((nz,nao,nao))
+        for i, z in enumerate(zs):
+            dm = reduce(numpy.dot, (orbv, (dai*z).reshape(nvir,nocc), orbo.T))
+            dmvo[i] = dm + dm.T # +cc for A+B and K_{ai,jb} in A == K_{ai,bj} in B
+
+        mem_now = pyscf.lib.current_memory()[0]
+        max_memory = max(2000, self.max_memory*.9-mem_now)
+        v1ao = _contract_xc_kernel(self, self._scf.xc, dmvo,
+                                   singlet=self.singlet, max_memory=max_memory)
+
+        if self.singlet:
+            vj = self._scf.get_j(mol, dmvo, hermi=1)
+            v1ao += vj * 2
+
+        v1vo = _ao2mo.nr_e2_(v1ao, mo_coeff, (nocc,nmo,0,nocc)).reshape(-1,nvir*nocc)
+#        edai = eai.ravel() * dai
+#        for i, z in enumerate(zs):
+#            # numpy.sqrt(eai) * (eai*dai*z + v1vo)
+#            v1vo[i] += edai*z
+#            v1vo[i] *= dai
+
+        fv = reduce(numpy.dot, (orbv.T, self._scf.sfock, orbv))
+        fo = reduce(numpy.dot, (orbo.T, self._scf.sfock, orbo))
+        sv = reduce(numpy.dot, (orbv.T, self._scf.ss1e, orbv))
+        so = reduce(numpy.dot, (orbo.T, self._scf.ss1e, orbo))
+        ss = numpy.empty_like(zs)
+        for i, z in enumerate(zs):
+            zm = z.reshape(nvir,nocc)
+            p1 = numpy.einsum('ij,kl,jl->ik',fv,so,zm)
+            p2 = numpy.einsum('ij,kl,jl->ik',sv,fo,zm)
+            ps = numpy.einsum('ij,kl,jl->ik',sv,so,zm)
+            v1vo[i] += (p1-p2).ravel()
+            ss[i] = ps.ravel()
+
+        return v1vo.reshape(nz,-1), ss.reshape(nz,-1)
+
+
+    def kernel(self, x0=None, nolmo=False):
         '''TDDFT diagonalization solver
         '''
         if self._scf._numint.libxc.is_hybrid_xc(self._scf.xc):
@@ -276,7 +457,12 @@ class TDDFTNoHybrid(TDA):
 
         precond = self.get_precond(eai.ravel()**2)
 
-        w2, x1 = pyscf.lib.davidson1(self.get_vind, x0, precond,
+        if nolmo:
+            w2, x1 = davidson.dgeev(self.abop, x0, precond, tol=self.conv_tol,
+                                    type=1, max_cycle=100, max_space=self.max_space,
+                                    lindep=self.lindep, verbose=self.verbose, nroots=self.nstates)
+        else:
+            w2, x1 = pyscf.lib.davidson1(self.get_vind, x0, precond,
                                      tol=self.conv_tol,
                                      nroots=self.nstates, lindep=self.lindep,
                                      max_space=self.max_space,
