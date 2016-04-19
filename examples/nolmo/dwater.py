@@ -6,6 +6,7 @@
 from pyscf import gto, dft, scf
 from pyscf.scf import nolmo
 from pyscf.future import tddft
+from pyscf.future.tddft import rks
 
 '''
 A simple example to run DFT calculation.
@@ -37,14 +38,16 @@ mydft.init_guess = '1e'
 mydft.conv_tol = 1.e-1
 mydft.kernel()
 mydft.conv_tol = 1.e-12
+
 mydft.nolmo()
-td = tddft.TDDFT(mydft)
+td = rks.TDDFT(mydft)
 td.singlet=False
 td.nstates = 10
-print (td.kernel(nolmo=True)[0] * 27.21139 )
+td.nomo = True
+print (td.kernel()[0] * 27.21139 )
 
 mydft.kernel()
-td = tddft.TDDFT(mydft)
+td = rks.TDDFT(mydft)
 td.singlet=False
 td.nstates = 10
 print (td.kernel()[0] * 27.21139 )

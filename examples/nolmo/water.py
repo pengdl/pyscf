@@ -50,7 +50,8 @@ scf.nolmo()
 td = tddft.TDDFT(scf)
 td.singlet=False
 td.nstates = 10
-print (td.kernel(nolmo=True)[0] * 27.21139 )
+td.nomo = True
+print (td.kernel()[0] * 27.21139 )
 td.ddiag()
 
 scf.kernel()
@@ -58,5 +59,5 @@ td = tddft.TDDFT(scf)
 td.singlet=False
 td.nstates = 10
 print (td.kernel()[0] * 27.21139 )
-td.ddiag2()
+td.ddiag()
 

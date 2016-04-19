@@ -966,6 +966,10 @@ class SCF(pyscf.lib.StreamObject):
 
         self.opt = None
         self._eri = None
+
+        self.ss1e = None
+        self.sfock = None
+
         self._keys = set(self.__dict__.keys())
 
     def build(self, mol=None):
