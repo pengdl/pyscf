@@ -134,6 +134,8 @@ def runscf(mf, conv_tol=1e-10, conv_tol_grad=None,
     #print 'Test1:',mt(a1)
     #print 'Test2:',mt(a2)
     mo_coeff = numpy.column_stack((mocc, movv))
+    mo_fock = reduce(numpy.dot, (mo_coeff.T, fock, mo_coeff))
+    mo_energy = mo_fock.diagonal()
     #print 'MO_coeff',mt(mo_coeff)
 
     return scf_conv, e_tot, mo_energy, mo_coeff, mo_occ
