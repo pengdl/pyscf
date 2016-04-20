@@ -123,6 +123,8 @@ def runscf(mf, conv_tol=1e-10, conv_tol_grad=None,
     #print 'SMAT:',mt(smat)
     
     movv = get_vir(mocc, s1e)
+    #movv = get_vir_ao(mocc, s1e)
+    #movv = get_vir_ds(dm, s1e)
     movv = renorm(s1e, movv)
     #print 'Cocc:',mt(mocc)
     #print 'Cvir:',mt(movv)
@@ -143,6 +145,9 @@ def runscf(mf, conv_tol=1e-10, conv_tol_grad=None,
 def get_vir(c,s):
     u, w, vt = scipy.linalg.svd(s.dot(c))
     return u[:,c.shape[1]:]
+
+def get_vir_ds(d,s):
+    return numpy.eye(s.shape[0]) - d.dot(s)*0.5
 
 def get_vir_ao(c,s):
     csc = reduce(numpy.dot, (c.T, s, c))
