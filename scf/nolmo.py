@@ -144,6 +144,15 @@ def get_vir(c,s):
     u, w, vt = scipy.linalg.svd(s.dot(c))
     return u[:,c.shape[1]:]
 
+def get_vir_ao(c,s):
+    csc = reduce(numpy.dot, (c.T, s, c))
+    w, v = numpy.linalg.eigh(csc)
+    idx = w > 0.
+    u = v[:,idx] / w[idx]
+    t = reduce(numpy.dot, (c, u, v.T, c.T, s))
+    o = numpy.eye(s.shape[0]) - t
+    return o
+
 def renorm(s,c):
     #from math import sqrt
     #smo = reduce(numpy.dot, (c.T, s, c))
