@@ -12,6 +12,7 @@ from pyscf.scf import hf
 from pyscf.scf import dhf
 from pyscf.scf import _vhf
 from pyscf.scf.x2c import _uncontract_mol,_get_hcore_fw
+from pyscf.scf.hf import dot_eri_dm
 
 def mt(a):
     x = []
@@ -204,3 +205,61 @@ class R2C(hf.SCF):
             vj, vk = self.get_jk(mol, dm, hermi=hermi)
             return vj - vk
 
+def dot_eri_dm_2(eri, dm, hermi, mol):
+    n2 = dm.shape[0]
+    n = n2 / 2
+    aar = dm[:n,:n].real
+    aai = dm[:n,:n].imag
+    abr = dm[:n,n:].real
+    abi = dm[:n,n:].imag
+    #bbr = dm[n:,n:].real
+    #bbi = dm[n:,n:].imag
+    #bar = dm[n:,:n].real
+    #bai = dm[n:,:n].imag
+    vjx = numpy.zeros( (n2,n2),dtype=numpy.complex)
+    vkx = numpy.zeros( (n2,n2),dtype=numpy.complex)
+
+    vj, vk = dot_eri_dm(eri, aar, 1)
+    vjx[:n,:n] =  vj*2.0
+    vjx[n:,n:] =  vj*2.0
+    vkx[:n,:n] =  vk 
+    vkx[n:,n:] =  vk
+    dmx = numpy.array([aai,abr,abi])
+    vj, vk = dot_eri_dm(eri, dmx, 2)
+    vkx[:n,:n] +=  vk[0]*1.0j
+    vkx[:n,n:]  =  vk[1] + vk[2]*1.0j
+    vkx[n:,:n]  = -vk[1] + vk[2]*1.0j
+    vkx[n:,n:] -=  vk[0]*1.0j
+
+    return vjx, vkx
+
+class R2CM(R2C):
+    def __init__(self,mol):
+        return R2C.__init__(self,mol)
+
+    def get_jk_(self, mol=None, dm=None, hermi=0):
+# Note the incore version, which initializes an _eri array in memory.
+        if mol is None: mol = self.mol
+        if dm is None: dm = self.make_rdm1()
+        cpu0 = (time.clock(), time.time())
+        if self._eri is not None or mol.incore_anyway or self._is_mem_enough():
+            if self._eri is None:
+                self._eri = _vhf.int2e_sph(mol._atm, mol._bas, mol._env)
+            #vj, vk = dot_eri_dm(self._eri, dm, hermi)
+            vj, vk = dot_eri_dm_2(self._eri, dm, hermi, self.mol)
+        else:
+            if self.direct_scf:
+                self.opt = self.init_direct_scf(mol)
+            vj, vk = get_jk(mol, dm, hermi, self.opt)
+        logger.timer(self, 'vj and vk', *cpu0)
+        return vj, vk
+
+    def get_veff(self, mol=None, dm=None, dm_last=0, vhf_last=0, hermi=0):
+        if mol is None: mol = self.mol
+        if dm is None: dm = self.make_rdm1()
+        if (self._eri is not None or not self.direct_scf or
+            mol.incore_anyway or self._is_mem_enough()):
+            vj, vk = self.get_jk(mol, dm, hermi)
+            return vj - vk
+        else:
+            return R2C.get_veff(self, mol, dm, dm_last, vhf_last, hermi)
