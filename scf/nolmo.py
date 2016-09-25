@@ -169,8 +169,23 @@ def runscf(mf, conv_tol=1e-10, conv_tol_grad=None,
     azx = -mf.proptot(dx,hz)
     azy = -mf.proptot(dy,hz)
     azz = -mf.proptot(dz,hz)
-
     print 'Polar(xx,xy,xz,yx,yy,yz,zx,zy,zz)=',axx,axy,axz,ayx,ayy,ayz,azx,azy,azz
+
+    w = 0.1
+    dx = mf.cphfxw(mo_occ, mo_enem, mo_coeff, mo_invs, xmat, hx, w)
+    dy = mf.cphfxw(mo_occ, mo_enem, mo_coeff, mo_invs, xmat, hy, w)
+    dz = mf.cphfxw(mo_occ, mo_enem, mo_coeff, mo_invs, xmat, hz, w)
+
+    axx = -mf.proptot(dx,hx)
+    axy = -mf.proptot(dy,hx)
+    axz = -mf.proptot(dz,hx)
+    ayx = -mf.proptot(dx,hy)
+    ayy = -mf.proptot(dy,hy)
+    ayz = -mf.proptot(dz,hy)
+    azx = -mf.proptot(dx,hz)
+    azy = -mf.proptot(dy,hz)
+    azz = -mf.proptot(dz,hz)
+    print 'PolarW(xx,xy,xz,yx,yy,yz,zx,zy,zz)=',axx,axy,axz,ayx,ayy,ayz,azx,azy,azz
 
     return scf_conv, e_tot, mo_energy, mo_coeff, mo_occ
 

@@ -1416,7 +1416,8 @@ class SCF(pyscf.lib.StreamObject):
                     if ( i < nocc and j >= nocc) or ( j < nocc and i >= nocc) :
                         u[i,j] = g[i,j] / (eig[j,j] - eig[i,i])
             conv_u = False
-            while not conv_u and cycle < 99 :
+            cycle2 = 0
+            while not conv_u and cycle2 < 99 :
                 unew = numpy.zeros_like(u)
                 dd = 0.
                 for i in range(nao):
@@ -1434,6 +1435,7 @@ class SCF(pyscf.lib.StreamObject):
                 if dd < 1e-12 :
                     conv_u = True
                 u = unew
+                cycle2 += 1
             c1 = numpy.dot(c0, u)
             mc0 = c0[:,occ>0]
             mc1 = c1[:,occ>0]
@@ -1446,6 +1448,72 @@ class SCF(pyscf.lib.StreamObject):
             vold = vnew
             cycle += 1
         return d
+
+
+    def cphfxw(self, occ, eig, c0, s1, a, f0, w):
+        nocc = sum( occ > 0 )
+        nao  = len( occ )
+        nvir = nao - nocc
+        vold = 0.0
+        conv = False
+        cycle = 0
+        f = f0
+        while not conv and cycle < 99 :
+            f2 = reduce(numpy.dot, (c0.T, f, c0) )
+            g1 = numpy.dot(s1, f2)
+            g2 = numpy.dot(s1, f2.T)
+            u1 = numpy.zeros_like(c0)
+            u2 = numpy.zeros_like(c0)
+            for i in range(nao):
+                for j in range(nao):
+                    if ( i < nocc and j >= nocc) or ( j < nocc and i >= nocc) :
+                        u1[i,j] = g1[i,j] / (eig[j,j] - eig[i,i] - w)
+                        u2[i,j] = g2[i,j] / (eig[j,j] - eig[i,i] + w)
+            conv_u = False
+            cycle2 = 0
+            while not conv_u and cycle2 < 99 :
+                unew1 = numpy.zeros_like(u1)
+                unew2 = numpy.zeros_like(u2)
+                dd = 0.
+                for i in range(nao):
+                    for j in range(nao):
+                        if ( i < nocc and j >= nocc) or ( j < nocc and i >= nocc) :
+                            temp1 = g1[i,j]
+                            temp2 = g2[i,j]
+                            for k in range(nao):
+                                if k != i :
+                                    temp1 += eig[i,k] * u1[k,j]
+                                    temp2 += eig[i,k] * u2[k,j]
+                                if k != j :
+                                    temp1 -= u1[i,k] * eig[k,j]
+                                    temp2 -= u2[i,k] * eig[k,j]
+                            unew1[i,j] = temp1 / (eig[j,j] - eig[i,i] - w)
+                            unew2[i,j] = temp2 / (eig[j,j] - eig[i,i] + w)
+                            dd += (unew1[i,j] - u1[i,j]) ** 2
+                            dd += (unew2[i,j] - u2[i,j]) ** 2
+                dd = math.sqrt( dd/(nvir*nocc*2) )
+                if dd < 1e-12 :
+                    conv_u = True
+                u1 = unew1
+                u2 = unew2
+                cycle2 += 1
+                #print cycle2,dd
+            c1 = numpy.dot(c0, u1)
+            c2 = numpy.dot(c0, u2)
+            mc0 = c0[:,occ>0]
+            mc1 = c1[:,occ>0]
+            mc2 = c2[:,occ>0]
+            d = reduce(numpy.dot, (mc0*occ[occ>0], a, mc2.T)) + reduce(numpy.dot, (mc1*occ[occ>0], a, mc0.T))
+            v = self.get_veff(self.mol, d, hermi=0)
+            f = f0 + v
+            vnew = self.proptot(d, f0)
+            if abs(vnew-vold) < 1e-9 :
+                conv = True
+            vold = vnew
+            cycle += 1
+            #print cycle, vnew
+        return d
+
 
 
 ############
