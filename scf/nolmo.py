@@ -138,6 +138,9 @@ def runscf(mf, conv_tol=1e-10, conv_tol_grad=None,
     #print 'Test2:',mt(a2)
     mo_coeff = numpy.column_stack((mocc, movv))
     mo_fock = reduce(numpy.dot, (mo_coeff.T, fock, mo_coeff))
+    mo_ovlp = reduce(numpy.dot, (mo_coeff.T, s1e, mo_coeff))
+    mo_invs = numpy.linalg.inv(mo_ovlp)
+    mo_enem = numpy.dot(mo_invs, mo_fock)
     mo_energy = mo_fock.diagonal()
     #print 'MO_coeff',mt(mo_coeff)
 
@@ -147,15 +150,15 @@ def runscf(mf, conv_tol=1e-10, conv_tol_grad=None,
 #    mol.set_common_orig_( cc )
 #    q = mol.intor_symmetric('cint1e_rr_sph',9)
     hx, hy, hz = p[0], p[1], p[2]
-    print dm,hx
+    #print dm,hx
     rx = mf.proptot(dm,hx)
     ry = mf.proptot(dm,hy)
     rz = mf.proptot(dm,hz)
     print 'Dipole=',-rx,-ry,-rz
 
-    dx = mf.cphf(mo_occ, mo_energy, mo_coeff, hx)
-    dy = mf.cphf(mo_occ, mo_energy, mo_coeff, hy)
-    dz = mf.cphf(mo_occ, mo_energy, mo_coeff, hz)
+    dx = mf.cphfx(mo_occ, mo_enem, mo_coeff, mo_invs, xmat, hx)
+    dy = mf.cphfx(mo_occ, mo_enem, mo_coeff, mo_invs, xmat, hy)
+    dz = mf.cphfx(mo_occ, mo_enem, mo_coeff, mo_invs, xmat, hz)
 
     axx = -mf.proptot(dx,hx)
     axy = -mf.proptot(dy,hx)

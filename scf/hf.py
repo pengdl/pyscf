@@ -22,7 +22,7 @@ from pyscf.scf import diis
 from pyscf.scf import _vhf
 from pyscf.scf import nolmo
 import pyscf.scf.chkfile
-
+import math
 
 def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
            dump_chk=True, dm0=None, callback=None, **kwargs):
@@ -170,6 +170,7 @@ Keyword argument "init_dm" is replaced by "dm0"''')
 #    mol.set_common_orig_( cc )
 #    q = mol.intor_symmetric('cint1e_rr_sph',9)
     hx, hy, hz = p[0], p[1], p[2]
+    #print dm,hx
     rx = mf.proptot(dm,hx)
     ry = mf.proptot(dm,hy)
     rz = mf.proptot(dm,hz)
@@ -1350,6 +1351,54 @@ class SCF(pyscf.lib.StreamObject):
             vold = vnew
             cycle += 1
         return d
+
+    def cphfx(self, occ, eig, c0, s1, a, f0):
+        nocc = sum( occ > 0 )
+        nao  = len( occ )
+        nvir = nao - nocc
+        vold = 0.0
+        conv = False
+        cycle = 0
+        f = f0
+        while not conv and cycle < 99 :
+            g = numpy.dot(s1, reduce(numpy.dot, (c0.T, f, c0)) )
+            u = numpy.zeros_like(c0)
+            for i in range(nao):
+                for j in range(nao):
+                    if ( i < nocc and j >= nocc) or ( j < nocc and i >= nocc) :
+                        u[i,j] = g[i,j] / (eig[j,j] - eig[i,i])
+            conv_u = False
+            while not conv_u and cycle < 99 :
+                unew = numpy.zeros_like(u)
+                dd = 0.
+                for i in range(nao):
+                    for j in range(nao):
+                        if ( i < nocc and j >= nocc) or ( j < nocc and i >= nocc) :
+                            temp = g[i,j]
+                            for k in range(nao):
+                                if k != i :
+                                    temp += eig[i,k] * u[k,j]
+                                if k != j :
+                                    temp -= u[i,k] * eig[k,j]
+                            unew[i,j] = temp / (eig[j,j] - eig[i,i])
+                            dd += (unew[i,j] - u[i,j]) ** 2
+                dd = math.sqrt( dd/(nvir*nocc) )
+                if dd < 1e-12 :
+                    conv_u = True
+                u = unew
+            c1 = numpy.dot(c0, u)
+            mc0 = c0[:,occ>0]
+            mc1 = c1[:,occ>0]
+            d = reduce(numpy.dot, (mc0*occ[occ>0], a, mc1.T)) + reduce(numpy.dot, (mc1*occ[occ>0], a, mc0.T))
+            v = self.get_veff(self.mol, d)
+            f = f0 + v
+            vnew = self.proptot(d, f0)
+            if abs(vnew-vold) < 1e-9 :
+                conv = True
+            vold = vnew
+            cycle += 1
+        return d
+
 
 ############
 
