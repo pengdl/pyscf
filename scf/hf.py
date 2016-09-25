@@ -14,6 +14,7 @@ from functools import reduce
 import numpy
 import scipy.linalg
 import pyscf.gto
+from pyscf.gto import charge_center
 import pyscf.lib
 import pyscf.gto.ecp
 from pyscf.lib import logger
@@ -161,6 +162,35 @@ Keyword argument "init_dm" is replaced by "dm0"''')
     logger.timer(mf, 'scf_cycle', *cput0)
     mf.sfock = fock
     mf.ss1e = s1e
+
+    dm = mf.make_rdm1(mo_coeff, mo_occ)
+    cc = charge_center(mol._atom)
+    mol.set_common_orig_( cc )
+    p = mol.intor_symmetric('cint1e_r_sph',3)
+#    mol.set_common_orig_( cc )
+#    q = mol.intor_symmetric('cint1e_rr_sph',9)
+    hx, hy, hz = p[0], p[1], p[2]
+    rx = mf.proptot(dm,hx)
+    ry = mf.proptot(dm,hy)
+    rz = mf.proptot(dm,hz)
+    print 'Dipole=',-rx,-ry,-rz
+
+    dx = mf.cphf(mo_occ, mo_energy, mo_coeff, hx)
+    dy = mf.cphf(mo_occ, mo_energy, mo_coeff, hy)
+    dz = mf.cphf(mo_occ, mo_energy, mo_coeff, hz)
+
+    axx = -mf.proptot(dx,hx)
+    axy = -mf.proptot(dy,hx)
+    axz = -mf.proptot(dz,hx)
+    ayx = -mf.proptot(dx,hy)
+    ayy = -mf.proptot(dy,hy)
+    ayz = -mf.proptot(dz,hy)
+    azx = -mf.proptot(dx,hz)
+    azy = -mf.proptot(dy,hz)
+    azz = -mf.proptot(dz,hz)
+
+    print 'Polar(xx,xy,xz,yx,yy,yz,zx,zy,zz)=',axx,axy,axz,ayx,ayy,ayz,azx,azy,azz
+
     return scf_conv, e_tot, mo_energy, mo_coeff, mo_occ
 
 
@@ -205,6 +235,9 @@ def energy_elec(mf, dm=None, h1e=None, vhf=None):
     logger.debug(mf, 'E_coul = %.15g', e_coul)
     return e1+e_coul, e_coul
 
+def proptot(dm, h1e):
+    ptot = numpy.einsum('ji,ji', h1e.conj(), dm).real
+    return ptot
 
 def energy_tot(mf, dm=None, h1e=None, vhf=None):
     r'''Total Hartree-Fock energy, electronic part plus nuclear repulstion
@@ -1154,6 +1187,9 @@ class SCF(pyscf.lib.StreamObject):
         self._finalize_()
         return self.e_tot
 
+    def proptot(self, dm, h1e):
+        return proptot(dm, h1e)
+
     def _finalize_(self):
         if self.converged:
             logger.note(self, 'converged SCF energy = %.15g', self.e_tot)
@@ -1287,6 +1323,33 @@ class SCF(pyscf.lib.StreamObject):
                          'It is replaced by attribute .damp\n')
         self.damp = x
 
+    def cphf(self, occ, eig, c0, f0):
+        nocc = sum( occ > 0 )
+        nao  = len( occ )
+        nvir = nao - nocc
+        vold = 0.0
+        conv = False
+        cycle = 0
+        f = f0
+        while not conv and cycle < 99 :
+            g = reduce(numpy.dot, (c0.T, f, c0))
+            u = numpy.zeros_like(c0)
+            for i in range(nao):
+                for j in range(nao):
+                    if ( i < nocc and j >= nocc) or ( j < nocc and i >= nocc) :
+                        u[i,j] = g[i,j] / (eig[j] - eig[i])
+            c1 = numpy.dot(c0, u)
+            mc0 = c0[:,occ>0]
+            mc1 = c1[:,occ>0]
+            d = numpy.dot(mc0*occ[occ>0], mc1.T) + numpy.dot(mc1*occ[occ>0], mc0.T)
+            v = self.get_veff(self.mol, d)
+            f = f0 + v
+            vnew = self.proptot(d, f0)
+            if abs(vnew-vold) < 1e-9 :
+                conv = True
+            vold = vnew
+            cycle += 1
+        return d
 
 ############
 
