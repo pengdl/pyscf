@@ -189,8 +189,22 @@ Keyword argument "init_dm" is replaced by "dm0"''')
     azx = -mf.proptot(dx,hz)
     azy = -mf.proptot(dy,hz)
     azz = -mf.proptot(dz,hz)
-
     print 'Polar(xx,xy,xz,yx,yy,yz,zx,zy,zz)=',axx,axy,axz,ayx,ayy,ayz,azx,azy,azz
+     
+    w = 0.1
+    dx = mf.cphfw(mo_occ, mo_energy, mo_coeff, hx, w)
+    dy = mf.cphfw(mo_occ, mo_energy, mo_coeff, hy, w)
+    dz = mf.cphfw(mo_occ, mo_energy, mo_coeff, hz, w)
+    axx = -mf.proptot(dx,hx)
+    axy = -mf.proptot(dy,hx)
+    axz = -mf.proptot(dz,hx)
+    ayx = -mf.proptot(dx,hy)
+    ayy = -mf.proptot(dy,hy)
+    ayz = -mf.proptot(dz,hy)
+    azx = -mf.proptot(dx,hz)
+    azy = -mf.proptot(dy,hz)
+    azz = -mf.proptot(dz,hz)
+    print 'PolarW(xx,xy,xz,yx,yy,yz,zx,zy,zz)=',axx,axy,axz,ayx,ayy,ayz,azx,azy,azz
 
     return scf_conv, e_tot, mo_energy, mo_coeff, mo_occ
 
@@ -1351,6 +1365,40 @@ class SCF(pyscf.lib.StreamObject):
             vold = vnew
             cycle += 1
         return d
+
+
+    def cphfw(self, occ, eig, c0, f0, w):
+        nocc = sum( occ > 0 )
+        nao  = len( occ )
+        nvir = nao - nocc
+        vold = 0.0
+        conv = False
+        cycle = 0
+        f = f0
+        while not conv and cycle < 99 :
+            g = reduce(numpy.dot, (c0.T, f, c0))
+            u1 = numpy.zeros_like(c0)
+            u2 = numpy.zeros_like(c0)
+            for i in range(nao):
+                for j in range(nao):
+                    if ( i < nocc and j >= nocc) or ( j < nocc and i >= nocc) :
+                        u1[i,j] = g[i,j] / (eig[j] - eig[i] - w)
+                        u2[i,j] = g[j,i] / (eig[j] - eig[i] + w)
+            c1 = numpy.dot(c0, u1)
+            c2 = numpy.dot(c0, u2)
+            mc0 = c0[:,occ>0]
+            mc1 = c1[:,occ>0]
+            mc2 = c2[:,occ>0]
+            d = numpy.dot(mc0*occ[occ>0], mc2.T) + numpy.dot(mc1*occ[occ>0], mc0.T)
+            v = self.get_veff(self.mol, d, hermi=0)
+            f = f0 + v
+            vnew = self.proptot(d, f0)
+            if abs(vnew-vold) < 1e-9 :
+                conv = True
+            vold = vnew
+            cycle += 1
+        return d
+
 
     def cphfx(self, occ, eig, c0, s1, a, f0):
         nocc = sum( occ > 0 )
