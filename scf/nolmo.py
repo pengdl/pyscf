@@ -12,6 +12,7 @@ import numpy
 import scipy.linalg
 import scipy.optimize
 import pyscf.gto
+from pyscf.gto import charge_center
 import pyscf.lib
 import pyscf.gto.ecp
 from pyscf.lib import logger
@@ -139,6 +140,34 @@ def runscf(mf, conv_tol=1e-10, conv_tol_grad=None,
     mo_fock = reduce(numpy.dot, (mo_coeff.T, fock, mo_coeff))
     mo_energy = mo_fock.diagonal()
     #print 'MO_coeff',mt(mo_coeff)
+
+    cc = charge_center(mol._atom)
+    mol.set_common_orig_( cc )
+    p = mol.intor_symmetric('cint1e_r_sph',3)
+#    mol.set_common_orig_( cc )
+#    q = mol.intor_symmetric('cint1e_rr_sph',9)
+    hx, hy, hz = p[0], p[1], p[2]
+    print dm,hx
+    rx = mf.proptot(dm,hx)
+    ry = mf.proptot(dm,hy)
+    rz = mf.proptot(dm,hz)
+    print 'Dipole=',-rx,-ry,-rz
+
+    dx = mf.cphf(mo_occ, mo_energy, mo_coeff, hx)
+    dy = mf.cphf(mo_occ, mo_energy, mo_coeff, hy)
+    dz = mf.cphf(mo_occ, mo_energy, mo_coeff, hz)
+
+    axx = -mf.proptot(dx,hx)
+    axy = -mf.proptot(dy,hx)
+    axz = -mf.proptot(dz,hx)
+    ayx = -mf.proptot(dx,hy)
+    ayy = -mf.proptot(dy,hy)
+    ayz = -mf.proptot(dz,hy)
+    azx = -mf.proptot(dx,hz)
+    azy = -mf.proptot(dy,hz)
+    azz = -mf.proptot(dz,hz)
+
+    print 'Polar(xx,xy,xz,yx,yy,yz,zx,zy,zz)=',axx,axy,axz,ayx,ayy,ayz,azx,azy,azz
 
     return scf_conv, e_tot, mo_energy, mo_coeff, mo_occ
 
