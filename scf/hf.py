@@ -249,6 +249,17 @@ Keyword argument "init_dm" is replaced by "dm0"''')
     bzzz = mf.proptot(dzz,hz)
     print 'HyperPolar(xxx,xxy,yxy,yyy,xxz,yxz,yyz,zxz,zyz,zzz)=',bxxx,bxxy,byxy,byyy,bxxz,byxz,byyz,bzxz,bzyz,bzzz
 
+    txxx = ( reduce(numpy.dot, (ux,gx,ux)) - reduce(numpy.dot, (ux,ux,ex)) ) * 6.0
+    bxxx = -sum(txxx[mo_occ>0,mo_occ>0])*2
+    txxy = (  reduce(numpy.dot, (ux,gx,uy)) 
+            + reduce(numpy.dot, (ux,gy,ux)) 
+            + reduce(numpy.dot, (uy,gx,ux)) 
+            - reduce(numpy.dot, (ux,ux,ey)) 
+            - reduce(numpy.dot, (ux,uy,ex)) 
+            - reduce(numpy.dot, (uy,ux,ex)) ) * 2.0
+    bxxy = -sum(txxy[mo_occ>0,mo_occ>0])*2
+    print 'bxxx,bxxy=',bxxx,bxxy
+
     return scf_conv, e_tot, mo_energy, mo_coeff, mo_occ
 
 def cbindx2(g1, u1, e1, c1, g2, u2, e2, c2, occ):
