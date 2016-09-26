@@ -167,6 +167,7 @@ Keyword argument "init_dm" is replaced by "dm0"''')
     cp = nucpole1(mol._atom)
     cq = nucpole2(mol._atom)
     mol.set_common_orig_( (0.,0.,0.) )
+#    mol.set_common_orig_( cp )
     p = mol.intor_symmetric('cint1e_r_sph',3)
     mol.set_common_orig_( (0.,0.,0.) )
     q = mol.intor_symmetric('cint1e_rr_sph',9)
@@ -225,8 +226,38 @@ Keyword argument "init_dm" is replaced by "dm0"''')
     azz = -mf.proptot(dz,hz)
     print 'PolarW(xx,xy,xz,yx,yy,yz,zx,zy,zz)=',axx,axy,axz,ayx,ayy,ayz,azx,azy,azz
 
+    (dx, ux, gx, ex, cx) = mf.cphf1(mo_occ, mo_energy, mo_coeff, hx)
+    (dy, uy, gy, ey, cy) = mf.cphf1(mo_occ, mo_energy, mo_coeff, hy)
+    (dz, uz, gz, ez, cz) = mf.cphf1(mo_occ, mo_energy, mo_coeff, hz)
+    fxx, mxx, uxx = cbindx2(gx, ux, ex, cx, gx, ux, ex, cx, mo_occ)
+    fxy, mxy, uxy = cbindx2(gx, ux, ex, cx, gy, uy, ey, cy, mo_occ)
+    fyy, myy, uyy = cbindx2(gy, uy, ey, cy, gy, uy, ey, cy, mo_occ)
+    fzz, mzz, uzz = cbindx2(gz, uz, ez, cz, gz, uz, ez, cz, mo_occ)
+    dxx = mf.cphf2(mo_occ, mo_energy, mo_coeff, hx, fxx, mxx, uxx)
+    dxy = mf.cphf2(mo_occ, mo_energy, mo_coeff, hx, fxy, mxy, uxy)
+    dyy = mf.cphf2(mo_occ, mo_energy, mo_coeff, hy, fyy, myy, uyy)
+    dzz = mf.cphf2(mo_occ, mo_energy, mo_coeff, hy, fzz, mzz, uzz)
+    bxxx = mf.proptot(dxx,hx)
+    bxxy = mf.proptot(dxx,hy)
+    byxy = mf.proptot(dyy,hx)
+    byyy = mf.proptot(dyy,hy)
+    bxxz = mf.proptot(dxx,hz)
+    byxz = mf.proptot(dxy,hz)
+    byyz = mf.proptot(dyy,hz)
+    bzxz = mf.proptot(dzz,hx)
+    bzyz = mf.proptot(dzz,hy)
+    bzzz = mf.proptot(dzz,hz)
+    print 'HyperPolar(xxx,xxy,yxy,yyy,xxz,yxz,yyz,zxz,zyz,zzz)=',bxxx,bxxy,byxy,byyy,bxxz,byxz,byyz,bzxz,bzyz,bzzz
+
     return scf_conv, e_tot, mo_energy, mo_coeff, mo_occ
 
+def cbindx2(g1, u1, e1, c1, g2, u2, e2, c2, occ):
+    gadd = numpy.dot(g1,u2) + numpy.dot(g2,u1) - numpy.dot(u1,e2) - numpy.dot(u2,e1)
+    mc1 = c1[:,occ>0]
+    mc2 = c2[:,occ>0]
+    dadd = numpy.dot(mc1*occ[occ>0], mc2.T) + numpy.dot(mc2*occ[occ>0], mc1.T)
+    uadd = (numpy.dot(u1,u2) + numpy.dot(u2,u1)) * 0.5
+    return gadd, dadd, uadd
 
 def energy_elec(mf, dm=None, h1e=None, vhf=None):
     r'''Electronic part of Hartree-Fock energy, for given core hamiltonian and
@@ -1356,6 +1387,71 @@ class SCF(pyscf.lib.StreamObject):
         sys.stderr.write('WARN: Attribute .damp_factor will be removed in PySCF v1.1. '
                          'It is replaced by attribute .damp\n')
         self.damp = x
+
+    def cphf2(self, occ, eig, c0, f0, g0, d0, u0):
+        nocc = sum( occ > 0 )
+        nao  = len( occ )
+        nvir = nao - nocc
+        vold = 0.0
+        conv = False
+        cycle = 0
+        f = numpy.zeros_like(f0)
+        while not conv and cycle < 99 :
+            g = reduce(numpy.dot, (c0.T, f, c0))
+            g += g0
+            u = numpy.zeros_like(c0)
+            for i in range(nao):
+                for j in range(nao):
+                    if ( i < nocc and j >= nocc) or ( j < nocc and i >= nocc) :
+                        u[i,j] = g[i,j] / (eig[j] - eig[i])
+                    else:
+                        u[i,j] = u0[i,j]
+            c1 = numpy.dot(c0, u)
+            mc0 = c0[:,occ>0]
+            mc1 = c1[:,occ>0]
+            d = numpy.dot(mc0*occ[occ>0], mc1.T) + numpy.dot(mc1*occ[occ>0], mc0.T)
+            d += d0
+            v = self.get_veff(self.mol, d)
+            f = v
+            vnew = self.proptot(d, f0)
+            if abs(vnew-vold) < 1e-9 :
+                conv = True
+            vold = vnew
+            cycle += 1
+        return d
+
+
+    def cphf1(self, occ, eig, c0, f0):
+        nocc = sum( occ > 0 )
+        nao  = len( occ )
+        nvir = nao - nocc
+        vold = 0.0
+        conv = False
+        cycle = 0
+        f = f0
+        while not conv and cycle < 99 :
+            g = reduce(numpy.dot, (c0.T, f, c0))
+            u = numpy.zeros_like(c0)
+            for i in range(nao):
+                for j in range(nao):
+                    if ( i < nocc and j >= nocc) or ( j < nocc and i >= nocc) :
+                        u[i,j] = g[i,j] / (eig[j] - eig[i])
+            c1 = numpy.dot(c0, u)
+            mc0 = c0[:,occ>0]
+            mc1 = c1[:,occ>0]
+            d = numpy.dot(mc0*occ[occ>0], mc1.T) + numpy.dot(mc1*occ[occ>0], mc0.T)
+            v = self.get_veff(self.mol, d)
+            f = f0 + v
+            vnew = self.proptot(d, f0)
+            if abs(vnew-vold) < 1e-9 :
+                conv = True
+            vold = vnew
+            cycle += 1
+        e = numpy.zeros_like(g)
+        for i in range(nao):
+            for j in range(nao):
+                e[i,j] = g[i,j] + eig[i]*u[i,j] - u[i,j]*eig[j]
+        return d, u, g, e, c1
 
     def cphf(self, occ, eig, c0, f0):
         nocc = sum( occ > 0 )
