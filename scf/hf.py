@@ -23,6 +23,7 @@ from pyscf.scf import _vhf
 from pyscf.scf import nolmo
 import pyscf.scf.chkfile
 import math
+from itertools import permutations
 
 def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
            dump_chk=True, dm0=None, callback=None, **kwargs):
@@ -259,6 +260,20 @@ Keyword argument "init_dm" is replaced by "dm0"''')
             - reduce(numpy.dot, (uy,ux,ex)) ) * 2.0
     bxxy = -sum(txxy[mo_occ>0,mo_occ>0])*2
     print 'bxxx,bxxy=',bxxx,bxxy
+
+    ud = {'x':ux, 'y':uy, 'z':uz}
+    gd = {'x':gx, 'y':gy, 'z':gz}
+    ed = {'x':ex, 'y':ey, 'z':ez}
+    blist = ('xxx', 'xxy', 'yxy', 'yyy', 'xxz', 'yxz', 'yyz', 'zxz', 'zyz', 'zzz')
+    for b3 in blist:
+        idx = list(permutations(list(b3),3))
+        mat = numpy.zeros_like(ux)
+        for i in set(idx) :
+            weight = idx.count(i)
+            mat += reduce(numpy.dot, (ud[i[0]], gd[i[1]], ud[i[2]])) * weight
+            mat -= reduce(numpy.dot, (ud[i[0]], ud[i[1]], ed[i[2]])) * weight
+        bb = -sum(mat[mo_occ>0,mo_occ>0])*2
+        print 'b'+b3+'=',bb
 
     return scf_conv, e_tot, mo_energy, mo_coeff, mo_occ
 
