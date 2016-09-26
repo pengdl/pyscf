@@ -1246,6 +1246,22 @@ def charge_center(atoms, charges=None, coords=None):
     rbar = numpy.einsum('i,ij->j', charges, coords)/charges.sum()
     return rbar
 
+def nucpole1(atoms, charges=None, coords=None):
+    if charges is None:
+        charges = numpy.array([_charge(a[0]) for a in atoms])
+    if coords is None:
+        coords = numpy.array([a[1] for a in atoms], dtype=float)
+    rbar = numpy.einsum('i,ij->j', charges, coords)
+    return rbar
+
+def nucpole2(atoms, charges=None, coords=None):
+    if charges is None:
+        charges = numpy.array([_charge(a[0]) for a in atoms])
+    if coords is None:
+        coords = numpy.array([a[1] for a in atoms], dtype=float)
+    rbar = numpy.einsum('i,ij,ik->jk', charges, coords, coords)
+    return rbar
+
 def mass_center(atoms):
     mass = numpy.array([param.ELEMENTS[_charge(a[0])][1] for a in atoms])
     return charge_center(atoms, mass)

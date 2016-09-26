@@ -14,7 +14,7 @@ from functools import reduce
 import numpy
 import scipy.linalg
 import pyscf.gto
-from pyscf.gto import charge_center
+from pyscf.gto import charge_center,nucpole1,nucpole2
 import pyscf.lib
 import pyscf.gto.ecp
 from pyscf.lib import logger
@@ -164,17 +164,36 @@ Keyword argument "init_dm" is replaced by "dm0"''')
     mf.ss1e = s1e
 
     dm = mf.make_rdm1(mo_coeff, mo_occ)
-    cc = charge_center(mol._atom)
-    mol.set_common_orig_( cc )
+    cp = nucpole1(mol._atom)
+    cq = nucpole2(mol._atom)
+    mol.set_common_orig_( (0.,0.,0.) )
     p = mol.intor_symmetric('cint1e_r_sph',3)
-#    mol.set_common_orig_( cc )
-#    q = mol.intor_symmetric('cint1e_rr_sph',9)
+    mol.set_common_orig_( (0.,0.,0.) )
+    q = mol.intor_symmetric('cint1e_rr_sph',9)
+
     hx, hy, hz = p[0], p[1], p[2]
+    hxx, hyy, hzz, hxy, hxz, hyz = q[0], q[4], q[8], q[1], q[2], q[5]
     #print dm,hx
     rx = mf.proptot(dm,hx)
     ry = mf.proptot(dm,hy)
     rz = mf.proptot(dm,hz)
-    print 'Dipole=',-rx,-ry,-rz
+    rx -= cp[0]
+    ry -= cp[1] 
+    rz -= cp[2] 
+    print 'Dipole(x,y,z)=',-rx,-ry,-rz
+    rxx = mf.proptot(dm,hxx)
+    ryy = mf.proptot(dm,hyy)
+    rzz = mf.proptot(dm,hzz)
+    rxy = mf.proptot(dm,hxy)
+    rxz = mf.proptot(dm,hxz)
+    ryz = mf.proptot(dm,hyz)
+    rxx -= cq[0,0]
+    ryy -= cq[1,1]
+    rzz -= cq[2,2]
+    rxy -= cq[0,1]
+    rxz -= cq[0,2]
+    ryz -= cq[1,2]
+    print 'Quadrupole(xx,yy,zz,xy,xz,yz)=',(-2*rxx+ryy+rzz)/3,(-2*ryy+rxx+rzz)/3,(-2*rzz+rxx+ryy)/3,-rxy,-rxz,-ryz
 
     dx = mf.cphf(mo_occ, mo_energy, mo_coeff, hx)
     dy = mf.cphf(mo_occ, mo_energy, mo_coeff, hy)
