@@ -213,9 +213,9 @@ Keyword argument "init_dm" is replaced by "dm0"''')
     print 'Polar(xx,xy,xz,yx,yy,yz,zx,zy,zz)=',axx,axy,axz,ayx,ayy,ayz,azx,azy,azz
      
     w = 0.1
-    dx = mf.cphfw(mo_occ, mo_energy, mo_coeff, hx, w)
-    dy = mf.cphfw(mo_occ, mo_energy, mo_coeff, hy, w)
-    dz = mf.cphfw(mo_occ, mo_energy, mo_coeff, hz, w)
+    (dx,ux1,ux2,gx1,gx2,ex1,ex2) = mf.cphfw(mo_occ, mo_energy, mo_coeff, hx, w)
+    (dy,uy1,uy2,gy1,gy2,ey1,ey2) = mf.cphfw(mo_occ, mo_energy, mo_coeff, hy, w)
+    (dz,uz1,uz2,gz1,gz2,ez1,ez2) = mf.cphfw(mo_occ, mo_energy, mo_coeff, hz, w)
     axx = -mf.proptot(dx,hx)
     axy = -mf.proptot(dy,hx)
     axz = -mf.proptot(dz,hx)
@@ -261,9 +261,9 @@ Keyword argument "init_dm" is replaced by "dm0"''')
     bxxy = -sum(txxy[mo_occ>0,mo_occ>0])*2
     #print 'bxxx,bxxy=',bxxx,bxxy
 
-    ud = {'x':ux, 'y':uy, 'z':uz}
-    gd = {'x':gx, 'y':gy, 'z':gz}
-    ed = {'x':ex, 'y':ey, 'z':ez}
+    ud = {'x':ux, 'x+':ux1, 'x-':ux2, 'y':uy, 'y+':uy1, 'y-':uy2, 'z':uz, 'z+':uz1, 'z-':uz2}
+    gd = {'x':gx, 'x+':gx1, 'x-':gx2, 'y':gy, 'y+':gy1, 'y-':gy2, 'z':gz, 'z+':gz1, 'z-':gz2}
+    ed = {'x':ex, 'x+':ex1, 'x-':ex2, 'y':ey, 'y+':ey1, 'y-':ey2, 'z':ez, 'z+':ez1, 'z-':ez2}
     blist = ('xxx', 'xxy', 'yxy', 'yyy', 'xxz', 'yxz', 'yyz', 'zxz', 'zyz', 'zzz')
     for b3 in blist:
         idx = list(permutations(list(b3),3))
@@ -274,6 +274,19 @@ Keyword argument "init_dm" is replaced by "dm0"''')
             mat -= reduce(numpy.dot, (ud[i[0]], ud[i[1]], ed[i[2]])) * weight
         bb = -sum(mat[mo_occ>0,mo_occ>0])*2
         print 'b'+b3+'=',bb
+
+    for b3 in blist:
+        ss = list(b3)
+        ss[0] += '-'
+        ss[2] += '+'
+        idx = list(permutations(ss,3))
+        mat = numpy.zeros_like(ux)
+        for i in set(idx) :
+            weight = idx.count(i)
+            mat += reduce(numpy.dot, (ud[i[0]], gd[i[1]], ud[i[2]])) * weight
+            mat -= reduce(numpy.dot, (ud[i[0]], ud[i[1]], ed[i[2]])) * weight
+        bb = -sum(mat[mo_occ>0,mo_occ>0])*2
+        print 'b'+b3+'w=',bb
 
     return scf_conv, e_tot, mo_energy, mo_coeff, mo_occ
 
@@ -1538,7 +1551,13 @@ class SCF(pyscf.lib.StreamObject):
                 conv = True
             vold = vnew
             cycle += 1
-        return d
+        e1 = numpy.zeros_like(g)
+        e2 = numpy.zeros_like(g)
+        for i in range(nao):
+            for j in range(nao):
+                e1[i,j] = g[i,j] + eig[i]*u1[i,j] - u1[i,j]*eig[j] + w*u1[i,j]
+                e2[i,j] = g[j,i] + eig[i]*u2[i,j] - u2[i,j]*eig[j] - w*u2[i,j]
+        return d, u1, u2, g, g.T, e1, e2
 
 
     def cphfx(self, occ, eig, c0, s1, a, f0):
