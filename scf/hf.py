@@ -259,7 +259,7 @@ Keyword argument "init_dm" is replaced by "dm0"''')
             - reduce(numpy.dot, (ux,uy,ex)) 
             - reduce(numpy.dot, (uy,ux,ex)) ) * 2.0
     bxxy = -sum(txxy[mo_occ>0,mo_occ>0])*2
-    print 'bxxx,bxxy=',bxxx,bxxy
+    #print 'bxxx,bxxy=',bxxx,bxxy
 
     ud = {'x':ux, 'y':uy, 'z':uz}
     gd = {'x':gx, 'y':gy, 'z':gz}
@@ -1588,7 +1588,8 @@ class SCF(pyscf.lib.StreamObject):
                 conv = True
             vold = vnew
             cycle += 1
-        return d
+        e = g + numpy.dot(eig, u) - numpy.dot(u, eig)
+        return d, u, g, e, c1
 
 
     def cphfxw(self, occ, eig, c0, s1, a, f0, w):
