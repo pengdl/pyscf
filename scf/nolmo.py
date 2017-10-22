@@ -155,53 +155,6 @@ def runscf(mf, conv_tol=1e-10, conv_tol_grad=None,
     rx = mf.proptot(dm,hx)
     ry = mf.proptot(dm,hy)
     rz = mf.proptot(dm,hz)
-    print 'Dipole=',-rx,-ry,-rz
-
-    (dx,ux,gx,ex,cx) = mf.cphfx(mo_occ, mo_enem, mo_coeff, mo_invs, xmat, hx)
-    (dy,uy,gy,ey,cy) = mf.cphfx(mo_occ, mo_enem, mo_coeff, mo_invs, xmat, hy)
-    (dz,uz,gz,ez,cz) = mf.cphfx(mo_occ, mo_enem, mo_coeff, mo_invs, xmat, hz)
-
-    axx = -mf.proptot(dx,hx)
-    axy = -mf.proptot(dy,hx)
-    axz = -mf.proptot(dz,hx)
-    ayx = -mf.proptot(dx,hy)
-    ayy = -mf.proptot(dy,hy)
-    ayz = -mf.proptot(dz,hy)
-    azx = -mf.proptot(dx,hz)
-    azy = -mf.proptot(dy,hz)
-    azz = -mf.proptot(dz,hz)
-    print 'Polar(xx,xy,xz,yx,yy,yz,zx,zy,zz)=',axx,axy,axz,ayx,ayy,ayz,azx,azy,azz
-
-    w = 0.1
-    dx = mf.cphfxw(mo_occ, mo_enem, mo_coeff, mo_invs, xmat, hx, w)
-    dy = mf.cphfxw(mo_occ, mo_enem, mo_coeff, mo_invs, xmat, hy, w)
-    dz = mf.cphfxw(mo_occ, mo_enem, mo_coeff, mo_invs, xmat, hz, w)
-
-    axx = -mf.proptot(dx,hx)
-    axy = -mf.proptot(dy,hx)
-    axz = -mf.proptot(dz,hx)
-    ayx = -mf.proptot(dx,hy)
-    ayy = -mf.proptot(dy,hy)
-    ayz = -mf.proptot(dz,hy)
-    azx = -mf.proptot(dx,hz)
-    azy = -mf.proptot(dy,hz)
-    azz = -mf.proptot(dz,hz)
-    print 'PolarW(xx,xy,xz,yx,yy,yz,zx,zy,zz)=',axx,axy,axz,ayx,ayy,ayz,azx,azy,azz
-
-    ud = {'x':ux, 'y':uy, 'z':uz}
-    gd = {'x':gx, 'y':gy, 'z':gz}
-    ed = {'x':ex, 'y':ey, 'z':ez}
-    blist = ('xxx', 'xxy', 'yxy', 'yyy', 'xxz', 'yxz', 'yyz', 'zxz', 'zyz', 'zzz')
-    for b3 in blist:
-        idx = list(permutations(list(b3),3))
-        mat = numpy.zeros_like(ux)
-        for i in set(idx) :
-            weight = idx.count(i)
-            mat += reduce(numpy.dot, (ud[i[0]], gd[i[1]], ud[i[2]])) * weight
-            mat -= reduce(numpy.dot, (ud[i[0]], ud[i[1]], ed[i[2]])) * weight
-        bb = -sum(mat[mo_occ>0,mo_occ>0])*2
-        print 'b'+b3+'=',bb
-
 
     return scf_conv, e_tot, mo_energy, mo_coeff, mo_occ
 
